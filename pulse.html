@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Случайный пульс PRO+ Mods + Camera PPG</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0b1220;
+      color: white;
+      text-align: center;
+      padding-top: 20px;
+    }
+
+    h1 { margin-bottom: 5px; }
+
+    #pulse {
+      font-size: 90px;
+      font-weight: bold;
+      margin: 10px 0;
+    }
+
+    button {
+      font-size: 13px;
+      padding: 9px 12px;
+      margin: 5px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    #start { background:#22c55e; color:white; }
+    #stop { background:#ef4444; color:white; }
+    #measure { background:#f97316; color:white; }
+
+    .mode { background:#334155; color:white; }
+    .doctor { background:#3b82f6; color:white; }
+    .modbtn { background:#a855f7; color:white; }
+
+    .status-container {
+      margin-top: 15px;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .status { display:flex; flex-direction:column; align-items:center; }
+
+    .circle {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      margin-bottom: 5px;
+      transition: 0.3s;
+    }
+
+    .green { background:#22c55e; }
+    .yellow { background:#eab308; }
+    .red { background:#ef4444; }
+
+    canvas {
+      margin-top: 12px;
+      background:#020617;
+      border-radius: 12px;
+    }
+
+    video { display:none; }
+
+    .modPanel {
+      margin-top: 10px;
+      display: none;
+      gap: 5px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .modPanel input {
+      padding: 8px;
+      border-radius: 8px;
+      border: none;
+      width: 240px;
+    }
+
+    .mods {
+      margin-top: 10px;
+      font-size: 12px;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+      background:#0f172a;
+      padding: 8px;
+      border-radius: 10px;
+      text-align:left;
+    }
+
+    #fingerGlow {
+      width: 120px;
+      height: 120px;
+      margin: 10px auto;
+      border-radius: 50%;
+      background: rgba(255,0,0,0.25);
+      box-shadow: 0 0 30px red;
+      display:none;
+      animation: pulseGlow 1s infinite;
+    }
+
+    @keyframes pulseGlow {
+      0%{transform:scale(1);opacity:0.5}
+      50%{transform:scale(1.2);opacity:1}
+      100%{transform:scale(1);opacity:0.5}
+    }
+  </style>
+</head>
+<body>
+
+<h1>Случайный пульс PRO+ Mods + Camera</h1>
+
+<div id="pulse">--</div>
+<div id="fingerGlow"></div>
+<video id="video" autoplay playsinline></video>
+
+<div>
+  <button id="start">Старт</button>
+  <button id="stop">Стоп</button>
+  <button class="mode" onclick="setMode('rest')">Спокойствие</button>
+  <button class="mode" onclick="setMode('stress')">Стресс</button>
+  <button class="mode" onclick="setMode('sport')">Спорт</button>
+  <button class="doctor" onclick="doctorHelp()">Врач</button>
+  <button class="modbtn" onclick="toggleModPanel()">Добавить мод</button>
+  <button id="measure">Померить пульс</button>
+</div>
+
+<div class="modPanel" id="modPanel">
+  <input id="modInput" placeholder="Введите мод: хаос, быстро, медленно..." />
+  <button onclick="addMod()">Применить</button>
+</div>
+
+<canvas id="ecg" width="500" height="120"></canvas>
+
+<div class="status-container">
+  <div class="status"><div id="arrhythmia" class="circle green"></div><div>Аритмия</div></div>
+  <div class="status"><div id="bradycardia" class="circle green"></div><div>Брадикардия</div></div>
+  <div class="status"><div id="tachycardia" class="circle green"></div><div>Тахикардия</div></div>
+</div>
+
+<div class="mods">
+<b>Активные моды:</b>
+<div id="modList">нет</div>
+</div>
+
+<script>
+let interval;
+let mode="rest";
+let lastPulse=80;
+let mods=[];
+
+let cameraInterval;
+const video=document.getElementById("video");
+const fingerGlow=document.getElementById("fingerGlow");
+
+const pulseEl=document.getElementById("pulse");
+const arr=document.getElementById("arrhythmia");
+const brady=document.getElementById("bradycardia");
+const tachy=document.getElementById("tachycardia");
+const modList=document.getElementById("modList");
+const modPanel=document.getElementById("modPanel");
+const modInput=document.getElementById("modInput");
+const canvas=document.getElementById("ecg");
+const ctx=canvas.getContext("2d");
+
+let x=0,lastY=60;
+
+function rand(min,max){return Math.floor(Math.random()*(max-min+1))+min;}
+
+function setMode(m){mode=m;}
+function doctorHelp(){mode="rest";alert("Пациент стабилизирован");}
+
+function toggleModPanel(){
+  modPanel.style.display=(modPanel.style.display==="flex")?"none":"flex";
+}
+
+function addMod(){
+  let m=modInput.value;
+  if(!m||!m.trim())return;
+  mods.push(m.trim().toLowerCase());
+  modInput.value="";
+  renderMods();
+}
+
+function renderMods(){
+  modList.innerHTML=mods.length?mods.join(", "):"нет";
+}
+
+function hasMod(...keys){
+  return mods.some(m=>keys.some(k=>m.includes(k)));
+}
+
+function modEffect(v){
+  let out=v;
+  if(hasMod("хаос","chaos")) out+=rand(-30,30);
+  if(hasMod("быстро","fast")) out+=15;
+  if(hasMod("медленно","slow")) out-=15;
+  if(hasMod("опасно","danger")) out+=rand(-10,30);
+  return Math.max(30,Math.min(200,out));
+}
+
+function generatePulse(){
+  let base;
+  if(mode=="rest") base=rand(60,85);
+  else if(mode=="stress") base=rand(80,130);
+  else base=rand(100,160);
+
+  let p=modEffect(base);
+  pulseEl.textContent=p;
+
+  brady.className="circle "+(p<60?"red":"green");
+  tachy.className="circle "+(p>=100?"red":"green");
+
+  const diff=Math.abs(p-lastPulse);
+  arr.className="circle "+(diff>20?"red":diff>10?"yellow":"green");
+
+  lastPulse=p;
+}
+
+function start(){if(interval)return;interval=setInterval(generatePulse,5000);generatePulse();}
+function stop(){clearInterval(interval);interval=null;}
+
+async function startCamera(){
+  try{
+    if(!navigator.mediaDevices) return alert("Камера не поддерживается");
+
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}});
+    video.srcObject=stream;
+    fingerGlow.style.display="block";
+
+    let samples=[];
+
+    cameraInterval=setInterval(()=>{
+      const c=document.createElement("canvas");
+      c.width=80;c.height=80;
+      const cctx=c.getContext("2d");
+      cctx.drawImage(video,0,0,80,80);
+
+      let data=cctx.getImageData(0,0,80,80).data;
+      let r=0;
+      for(let i=0;i<data.length;i+=4) r+=data[i];
+
+      let avg=r/(data.length/4);
+      samples.push(avg);
+
+      if(samples.length>40){
+        samples.shift();
+        let peaks=0;
+        for(let i=1;i<samples.length;i++) if(samples[i]>samples[i-1]) peaks++;
+        let bpm=Math.round(peaks*1.8);
+        if(bpm>40&&bpm<200) pulseEl.textContent=bpm;
+      }
+    },250);
+
+  }catch(e){alert("Ошибка камеры или нет HTTPS");}
+}
+
+function stopCamera(){
+  clearInterval(cameraInterval);
+  fingerGlow.style.display="none";
+  if(video.srcObject) video.srcObject.getTracks().forEach(t=>t.stop());
+}
+
+document.getElementById("start").onclick=start;
+document.getElementById("stop").onclick=stop;
+document.getElementById("measure").addEventListener("click", startCamera);
+</script>
+
+</body>
+</html>
